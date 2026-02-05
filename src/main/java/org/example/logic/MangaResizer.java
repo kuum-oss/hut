@@ -8,6 +8,7 @@ import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.example.model.CropMode;
 
 import java.awt.*;
@@ -17,148 +18,154 @@ import java.io.File;
 public class MangaResizer {
 
     private final MangaImageProcessor imageProcessor = new MangaImageProcessor();
+    private static final String WATERMARK_TEXT = "oceanofpdf";
+    // Базовое DPI повышено до 300 для HD качества
+    private static final float RENDER_DPI = 300f;
+    // Коэффициент дополнительного увеличения (если включен upscale)
+    private static final double UPSCALE_FACTOR = 1.5;
 
-    public BufferedImage getPreviewImage(File file) {
-        try (PDDocument doc = PDDocument.load(file)) {
-            PDFRenderer renderer = new PDFRenderer(doc);
-            return renderer.renderImageWithDPI(0, 150, ImageType.RGB);
-        } catch (Exception e) { e.printStackTrace(); return null; }
-    }
-
-    /**
-     * Основной метод ресайза.
-     */
     public void applyResize(File file, CropMode cropMode, boolean upscale, boolean binarization, boolean skipFirstPage, boolean smartCrop) throws Exception {
+        System.out.println("   [LOG] Открытие файла для HD обработки: " + file.getName());
+
+        // Принудительная чистка памяти перед началом тяжелой работы
+        System.gc();
 
         try (PDDocument sourceDoc = PDDocument.load(file)) {
-            try (PDDocument newDoc = new PDDocument()) {
+            PDFTextStripper stripper = new PDFTextStripper();
 
+            // Используем memory-optimized режим для нового документа, чтобы экономить RAM
+            try (PDDocument newDoc = new PDDocument(org.apache.pdfbox.io.MemoryUsageSetting.setupTempFileOnly())) {
                 PDFRenderer renderer = new PDFRenderer(sourceDoc);
                 int totalPages = sourceDoc.getNumberOfPages();
 
-                // Переменная для хранения "Эталонного кропа" (для режима SmartCrop = OFF)
-                Rectangle fixedCropBox = null;
-
                 for (int i = 0; i < totalPages; i++) {
+                    // Чистим память на каждой итерации, иначе на 300 DPI все лопнет
+                    if (i % 5 == 0) System.gc();
 
-                    // 1. ЗАЩИТА ОБЛОЖКИ (если включено и это 1-я стр)
-                    if (i == 0 && skipFirstPage) {
-                        newDoc.importPage(sourceDoc.getPage(i));
+                    // --- 1. ПРОВЕРКА НА РЕКЛАМУ ---
+                    stripper.setStartPage(i + 1);
+                    stripper.setEndPage(i + 1);
+                    String pageText = stripper.getText(sourceDoc).toLowerCase();
+
+                    if (pageText.contains(WATERMARK_TEXT)) {
+                        System.out.println("   [DEL] Страница " + (i + 1) + " удалена (реклама).");
                         continue;
                     }
 
-                    // 2. Рендеринг страницы
-                    BufferedImage pageImage = renderer.renderImageWithDPI(i, 300, ImageType.RGB);
+                    // --- 2. ПРОПУСК ОБЛОЖКИ ---
+                    if (skipFirstPage && i == 0) {
+                        System.out.println("   [SKIP] Обложка скопирована без изменений.");
+                        newDoc.addPage(sourceDoc.getPage(i));
+                        continue;
+                    }
 
-                    // 3. ВЫЧИСЛЕНИЕ ОБРЕЗКИ (CROP)
-                    Rectangle cropRect;
+                    System.out.println("   [PROC] Обработка страницы " + (i + 1) + " (HD Quality)...");
 
+                    // --- 3. РЕНДЕРИНГ В HD (300 DPI) ---
+                    // Это самая тяжелая часть для памяти
+                    BufferedImage image = renderer.renderImageWithDPI(i, RENDER_DPI, ImageType.RGB);
+
+                    // --- 4. ДОПОЛНИТЕЛЬНОЕ HD УЛУЧШЕНИЕ (Upscale) ---
+                    if (upscale) {
+                        System.out.println("      [HD+] Дополнительное улучшение четкости (x" + UPSCALE_FACTOR + ")...");
+                        image = upscaleImageHighQuality(image);
+                    }
+
+                    // --- 5. АВТО-ОБРЕЗКА ---
                     if (smartCrop) {
-                        // РЕЖИМ 1: Агрессивный умный кроп (для каждой страницы свой)
-                        cropRect = calculateContentBounds(pageImage);
-                    } else {
-                        // РЕЖИМ 2: Статичный кроп (по 2-й странице)
-
-                        // Если режим "Без изменений" (SKIP), то не обрезаем вообще
-                        if (cropMode == CropMode.SKIP) {
-                            cropRect = new Rectangle(0, 0, pageImage.getWidth(), pageImage.getHeight());
-                        } else {
-                            // Иначе пытаемся вычислить эталон по 2-й странице
-                            if (fixedCropBox == null) {
-                                // Вычисляем ТОЛЬКО если это не обложка (начиная со 2-й стр, i >= 1)
-                                // Если файл всего из 1 стр, придется вычислять по ней (i==0)
-                                if (i >= 1 || totalPages == 1) {
-                                    fixedCropBox = calculateContentBounds(pageImage);
-                                    if (fixedCropBox != null) {
-                                        System.out.println("Эталон обрезки зафиксирован по стр " + (i+1));
-                                    }
-                                }
-                            }
-
-                            // Применяем эталон
-                            if (fixedCropBox != null) {
-                                cropRect = fixedCropBox;
-                            } else {
-                                // Если эталон еще не найден (например, мы на 1-й стр, а эталон ищем со 2-й)
-                                // пока берем полную картинку
-                                cropRect = new Rectangle(0, 0, pageImage.getWidth(), pageImage.getHeight());
-                            }
-                        }
+                        image = autoCrop(image);
                     }
 
-                    // Страховка: если алгоритм вернул null или мусор — берем оригинал
-                    if (cropRect == null || cropRect.width < 50 || cropRect.height < 50) {
-                        cropRect = new Rectangle(0, 0, pageImage.getWidth(), pageImage.getHeight());
-                    }
-
-                    // Дополнительная страховка выхода за границы (на случай FixedCrop > текущей картинки)
-                    cropRect = clampRect(cropRect, pageImage.getWidth(), pageImage.getHeight());
-
-                    // 4. ФИЗИЧЕСКАЯ ОБРЕЗКА
-                    BufferedImage croppedImage = pageImage.getSubimage(cropRect.x, cropRect.y, cropRect.width, cropRect.height);
-
-                    // 5. ОБРАБОТКА (Ч/Б, Апскейл)
+                    // --- 6. ФИЛЬТРЫ (Ч/Б) ---
                     imageProcessor.setBinarization(binarization);
-                    BufferedImage finalImage = imageProcessor.process(croppedImage);
+                    BufferedImage processed = imageProcessor.process(image);
 
-                    // 6. СОХРАНЕНИЕ В PDF
-                    PDPage newPage = new PDPage(new PDRectangle(finalImage.getWidth(), finalImage.getHeight()));
+                    // Освобождаем исходную тяжелую картинку
+                    image.flush();
+
+                    // --- 7. СОЗДАНИЕ СТРАНИЦЫ ---
+                    PDPage newPage = new PDPage(new PDRectangle(processed.getWidth(), processed.getHeight()));
                     newDoc.addPage(newPage);
 
-                    PDImageXObject pdImage = LosslessFactory.createFromImage(newDoc, finalImage);
+                    // Используем LosslessFactory (PNG сжатие) для сохранения максимального качества
+                    PDImageXObject pdImage = LosslessFactory.createFromImage(newDoc, processed);
                     try (PDPageContentStream contentStream = new PDPageContentStream(newDoc, newPage)) {
                         contentStream.drawImage(pdImage, 0, 0);
                     }
+                    // Освобождаем обработанную картинку
+                    processed.flush();
                 }
-                newDoc.save(file);
+
+                String newPath = file.getAbsolutePath().replace(".pdf", "_HD.pdf");
+                newDoc.save(new File(newPath));
+                System.out.println("   [DONE] HD Файл сохранен: " + newPath);
             }
+        } catch (OutOfMemoryError e) {
+            System.err.println("   [!!!] КРИТИЧЕСКАЯ ОШИБКА ПАМЯТИ [!!!]");
+            System.err.println("   Для HD обработки 300 DPI нужно больше памяти.");
+            System.err.println("   Добавьте в параметры запуска: -Xmx6G");
+            throw new Exception("Нехватка памяти для HD обработки. Увеличьте Heap Size.");
         }
     }
 
-    // Вспомогательный метод: ищем границы контента
-    private Rectangle calculateContentBounds(BufferedImage img) {
-        int width = img.getWidth();
-        int height = img.getHeight();
-        int minX = width, minY = height, maxX = 0, maxY = 0;
-        boolean found = false;
-        int threshold = 235; // Чувствительность к белому (255 - белый)
+    /**
+     * Качественное увеличение изображения (Lanczos interpolation).
+     * Делает линии гладкими без "мыла".
+     */
+    /**
+     * Качественное увеличение изображения.
+     * Исправлено: Используем BICUBIC, так как LANCZOS нет в стандартной Java.
+     */
+    private BufferedImage upscaleImageHighQuality(BufferedImage source) {
+        int newW = (int) (source.getWidth() * UPSCALE_FACTOR);
+        int newH = (int) (source.getHeight() * UPSCALE_FACTOR);
 
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int rgb = img.getRGB(x, y);
-                int r = (rgb >> 16) & 0xFF;
-                int g = (rgb >> 8) & 0xFF;
-                int b = (rgb) & 0xFF;
+        BufferedImage resized = new BufferedImage(newW, newH, source.getType());
+        Graphics2D g = resized.createGraphics();
 
-                // Если пиксель не белый
-                if (r < threshold || g < threshold || b < threshold) {
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
-                    found = true;
-                }
-            }
-        }
+        // Включаем максимальное качество, доступное в Java
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC); // <-- ИСПРАВЛЕНО ТУТ
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        if (!found) return null; // Пустой белый лист
+        g.drawImage(source, 0, 0, newW, newH, null);
+        g.dispose();
 
-        // Добавляем padding (отступы), чтобы не резать вплотную к тексту
-        int padding = 15;
-        minX = Math.max(0, minX - padding);
-        minY = Math.max(0, minY - padding);
-        maxX = Math.min(width, maxX + padding);
-        maxY = Math.min(height, maxY + padding);
-
-        return new Rectangle(minX, minY, maxX - minX, maxY - minY);
+        return resized;
     }
 
-    // Защита от выхода за пределы картинки (важно для Fixed Mode)
-    private Rectangle clampRect(Rectangle rect, int imgW, int imgH) {
-        int x = Math.max(0, rect.x);
-        int y = Math.max(0, rect.y);
-        int w = Math.min(imgW - x, rect.width);
-        int h = Math.min(imgH - y, rect.height);
-        return new Rectangle(x, y, w, h);
+    // (Методы autoCrop, isRowWhite, isColWhite, isPixelWhite остаются без изменений из прошлого ответа)
+    private BufferedImage autoCrop(BufferedImage source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int top = 0, bottom = height - 1, left = 0, right = width - 1;
+        int whiteThreshold = 230;
+
+        for (int y = 0; y < height; y++) { if (!isRowWhite(source, y, width, whiteThreshold)) { top = y; break; } }
+        for (int y = height - 1; y >= 0; y--) { if (!isRowWhite(source, y, width, whiteThreshold)) { bottom = y; break; } }
+        for (int x = 0; x < width; x++) { if (!isColWhite(source, x, top, bottom, whiteThreshold)) { left = x; break; } }
+        for (int x = width - 1; x >= 0; x--) { if (!isColWhite(source, x, top, bottom, whiteThreshold)) { right = x; break; } }
+
+        if (left >= right || top >= bottom) return source;
+
+        int padding = 20;
+        left = Math.max(0, left - padding);
+        top = Math.max(0, top - padding);
+        right = Math.min(width, right + padding);
+        bottom = Math.min(height, bottom + padding);
+
+        return source.getSubimage(left, top, right - left, bottom - top);
+    }
+
+    private boolean isRowWhite(BufferedImage img, int y, int width, int threshold) {
+        for (int x = 0; x < width; x += 5) if (!isPixelWhite(img.getRGB(x, y), threshold)) return false;
+        return true;
+    }
+    private boolean isColWhite(BufferedImage img, int x, int startY, int endY, int threshold) {
+        for (int y = startY; y <= endY; y += 5) if (!isPixelWhite(img.getRGB(x, y), threshold)) return false;
+        return true;
+    }
+    private boolean isPixelWhite(int rgb, int threshold) {
+        return ((rgb >> 16) & 0xFF) > threshold && ((rgb >> 8) & 0xFF) > threshold && (rgb & 0xFF) > threshold;
     }
 }
