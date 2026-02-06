@@ -15,7 +15,6 @@ import java.util.List;
 
 public class MangaCleanerApp extends JFrame {
 
-    // Логика
     private final MangaResizer mangaResizer = new MangaResizer();
     private final EpubWatermarkCleaner epubCleaner = new EpubWatermarkCleaner();
 
@@ -24,8 +23,6 @@ public class MangaCleanerApp extends JFrame {
     private JProgressBar progressBar;
     private JLabel statusLabel;
     private CircleLoader circleLoader;
-
-    // --- НОВЫЙ КОМПОНЕНТ: ГАЛОЧКА ---
     private JCheckBox hdModeCheckBox;
 
     // Константы дизайна
@@ -39,7 +36,7 @@ public class MangaCleanerApp extends JFrame {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ignored) {}
 
-        setTitle("Manga Cleaner v18 - With Settings");
+        setTitle("Manga Cleaner v19 - Color Cover Support");
         setSize(950, 750);
         setMinimumSize(new Dimension(800, 600));
         setLocationRelativeTo(null);
@@ -53,19 +50,14 @@ public class MangaCleanerApp extends JFrame {
         mainPanel.setBackground(BG_COLOR);
         mainPanel.setBorder(new EmptyBorder(25, 25, 25, 25));
 
-        // Верхняя часть (Заголовок + Настройки)
         JPanel topContainer = new JPanel(new BorderLayout());
         topContainer.setOpaque(false);
         topContainer.add(createHeader(), BorderLayout.NORTH);
         topContainer.add(createSettingsPanel(), BorderLayout.SOUTH);
 
         mainPanel.add(topContainer, BorderLayout.NORTH);
-
-        // Центр (Drop Zone)
         dropPanel = createDropZone();
         mainPanel.add(dropPanel, BorderLayout.CENTER);
-
-        // Низ (Статус)
         mainPanel.add(createFooter(), BorderLayout.SOUTH);
 
         add(mainPanel);
@@ -79,7 +71,7 @@ public class MangaCleanerApp extends JFrame {
         title.setFont(FONT_TITLE);
         title.setForeground(Color.DARK_GRAY);
 
-        JLabel subtitle = new JLabel("PDF (Чистка + Upscale) | EPUB (Удаление рекламы)");
+        JLabel subtitle = new JLabel("PDF (Чистка + Обложка в цвете) | EPUB (Удаление рекламы)");
         subtitle.setFont(FONT_TEXT);
         subtitle.setForeground(Color.GRAY);
 
@@ -88,7 +80,6 @@ public class MangaCleanerApp extends JFrame {
         return header;
     }
 
-    // --- НОВАЯ ПАНЕЛЬ С НАСТРОЙКАМИ ---
     private JPanel createSettingsPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 15));
         panel.setOpaque(false);
@@ -98,8 +89,6 @@ public class MangaCleanerApp extends JFrame {
         hdModeCheckBox.setForeground(ACCENT_COLOR);
         hdModeCheckBox.setOpaque(false);
         hdModeCheckBox.setFocusPainted(false);
-
-        // По умолчанию выключено (чтобы работало быстро)
         hdModeCheckBox.setSelected(false);
 
         panel.add(hdModeCheckBox);
@@ -168,11 +157,8 @@ public class MangaCleanerApp extends JFrame {
         return footer;
     }
 
-    // --- ЛОГИКА ОБРАБОТКИ ---
     private void startProcessing(List<File> files) {
-        // Читаем состояние галочки ПЕРЕД запуском потока
         boolean useUpscale = hdModeCheckBox.isSelected();
-
         toggleUI(true);
 
         SwingWorker<Void, Integer> worker = new SwingWorker<>() {
@@ -185,16 +171,15 @@ public class MangaCleanerApp extends JFrame {
 
                     try {
                         if (fileName.endsWith(".pdf")) {
-                            System.out.println(">>> Режим PDF: " + fileName + " | HD Mode: " + useUpscale);
+                            System.out.println(">>> Режим PDF: " + fileName + " | HD: " + useUpscale);
 
-                            // Передаем значение useUpscale (true/false) в ресайзер
                             mangaResizer.applyResize(
                                     file,
-                                    CropMode.SMART, // Теперь этот enum есть
-                                    useUpscale,     // <--- БЕРЕМ ИЗ ГАЛОЧКИ
-                                    true,           // binarization (Ч/Б фильтр всегда включен)
-                                    false,          // skipFirstPage
-                                    true            // smartCrop
+                                    CropMode.SMART,
+                                    useUpscale,
+                                    true,   // binarization (фильтр ч/б для остальных страниц)
+                                    true,   // <--- ТЕПЕРЬ TRUE! (Пропустить первую страницу = оставить цветной)
+                                    true    // smartCrop
                             );
                         }
                         else if (fileName.endsWith(".epub")) {
@@ -238,7 +223,7 @@ public class MangaCleanerApp extends JFrame {
         progressBar.setVisible(processing);
         circleLoader.setVisible(processing);
         dropPanel.setEnabled(!processing);
-        hdModeCheckBox.setEnabled(!processing); // Блокируем галочку во время работы
+        hdModeCheckBox.setEnabled(!processing);
         if (processing) progressBar.setValue(0);
     }
 
