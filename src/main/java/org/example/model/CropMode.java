@@ -1,10 +1,10 @@
 package org.example.model;
 
 public enum CropMode {
-    SKIP,           // Пропустить
-    FIT_WIDTH,      // По ширине
-    FIT_HEIGHT,     // По высоте
-    STRETCH,        // Растянуть
+    SKIP,           // Пропустить (не менять)
+    FIT_WIDTH,      // Растянуть по ширине
+    FIT_HEIGHT,     // Растянуть по высоте
+    STRETCH,        // Растянуть на весь экран
     CENTER_ONLY,    // Центрировать
-    SMART           // <--- ВАЖНО: Добавьте этот режим!
+    SMART           // <--- ДОБАВЛЕНО: Умная обрезка полей
 }

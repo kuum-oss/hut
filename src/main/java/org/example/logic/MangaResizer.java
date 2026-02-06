@@ -19,30 +19,36 @@ public class MangaResizer {
 
     private final MangaImageProcessor imageProcessor = new MangaImageProcessor();
     private static final String WATERMARK_TEXT = "oceanofpdf";
-    // Базовое DPI повышено до 300 для HD качества
-    private static final float RENDER_DPI = 300f;
-    // Коэффициент дополнительного увеличения (если включен upscale)
+
+    // Настройки качества
+    private static final float DPI_STANDARD = 150f; // Быстро, для чтения
+    private static final float DPI_HIGH = 300f;     // HD, если включено улучшение
     private static final double UPSCALE_FACTOR = 1.5;
 
     public void applyResize(File file, CropMode cropMode, boolean upscale, boolean binarization, boolean skipFirstPage, boolean smartCrop) throws Exception {
-        System.out.println("   [LOG] Открытие файла для HD обработки: " + file.getName());
+        // Выбираем DPI в зависимости от настройки
+        float currentDpi = upscale ? DPI_HIGH : DPI_STANDARD;
+        String modeName = upscale ? "HD Quality (300 DPI + Upscale)" : "Standard Quality (150 DPI)";
 
-        // Принудительная чистка памяти перед началом тяжелой работы
+        System.out.println("   [LOG] Открытие файла: " + file.getName());
+        System.out.println("   [MODE] Режим: " + modeName);
+
+        // Чистим память перед стартом
         System.gc();
 
         try (PDDocument sourceDoc = PDDocument.load(file)) {
             PDFTextStripper stripper = new PDFTextStripper();
 
-            // Используем memory-optimized режим для нового документа, чтобы экономить RAM
+            // Используем temp file для экономии RAM
             try (PDDocument newDoc = new PDDocument(org.apache.pdfbox.io.MemoryUsageSetting.setupTempFileOnly())) {
                 PDFRenderer renderer = new PDFRenderer(sourceDoc);
                 int totalPages = sourceDoc.getNumberOfPages();
 
                 for (int i = 0; i < totalPages; i++) {
-                    // Чистим память на каждой итерации, иначе на 300 DPI все лопнет
-                    if (i % 5 == 0) System.gc();
+                    // Периодическая очистка мусора
+                    if (i % 10 == 0) System.gc();
 
-                    // --- 1. ПРОВЕРКА НА РЕКЛАМУ ---
+                    // --- 1. ПРОВЕРКА НА РЕКЛАМУ (Работает всегда) ---
                     stripper.setStartPage(i + 1);
                     stripper.setEndPage(i + 1);
                     String pageText = stripper.getText(sourceDoc).toLowerCase();
@@ -54,24 +60,22 @@ public class MangaResizer {
 
                     // --- 2. ПРОПУСК ОБЛОЖКИ ---
                     if (skipFirstPage && i == 0) {
-                        System.out.println("   [SKIP] Обложка скопирована без изменений.");
                         newDoc.addPage(sourceDoc.getPage(i));
                         continue;
                     }
 
-                    System.out.println("   [PROC] Обработка страницы " + (i + 1) + " (HD Quality)...");
+                    System.out.println("   [PROC] Стр. " + (i + 1) + " -> Рендеринг...");
 
-                    // --- 3. РЕНДЕРИНГ В HD (300 DPI) ---
-                    // Это самая тяжелая часть для памяти
-                    BufferedImage image = renderer.renderImageWithDPI(i, RENDER_DPI, ImageType.RGB);
+                    // --- 3. РЕНДЕРИНГ (DPI зависит от настроек) ---
+                    BufferedImage image = renderer.renderImageWithDPI(i, currentDpi, ImageType.RGB);
 
-                    // --- 4. ДОПОЛНИТЕЛЬНОЕ HD УЛУЧШЕНИЕ (Upscale) ---
+                    // --- 4. УЛУЧШЕНИЕ КАЧЕСТВА (Только если выбрано в настройках) ---
                     if (upscale) {
-                        System.out.println("      [HD+] Дополнительное улучшение четкости (x" + UPSCALE_FACTOR + ")...");
+                        System.out.println("      [HD+] Upscale x1.5...");
                         image = upscaleImageHighQuality(image);
                     }
 
-                    // --- 5. АВТО-ОБРЕЗКА ---
+                    // --- 5. АВТО-ОБРЕЗКА (Работает всегда, если выбрано smartCrop) ---
                     if (smartCrop) {
                         image = autoCrop(image);
                     }
@@ -79,42 +83,35 @@ public class MangaResizer {
                     // --- 6. ФИЛЬТРЫ (Ч/Б) ---
                     imageProcessor.setBinarization(binarization);
                     BufferedImage processed = imageProcessor.process(image);
+                    image.flush(); // Освобождаем память
 
-                    // Освобождаем исходную тяжелую картинку
-                    image.flush();
-
-                    // --- 7. СОЗДАНИЕ СТРАНИЦЫ ---
+                    // --- 7. СОХРАНЕНИЕ СТРАНИЦЫ ---
                     PDPage newPage = new PDPage(new PDRectangle(processed.getWidth(), processed.getHeight()));
                     newDoc.addPage(newPage);
 
-                    // Используем LosslessFactory (PNG сжатие) для сохранения максимального качества
                     PDImageXObject pdImage = LosslessFactory.createFromImage(newDoc, processed);
                     try (PDPageContentStream contentStream = new PDPageContentStream(newDoc, newPage)) {
                         contentStream.drawImage(pdImage, 0, 0);
                     }
-                    // Освобождаем обработанную картинку
                     processed.flush();
                 }
 
-                String newPath = file.getAbsolutePath().replace(".pdf", "_HD.pdf");
+                // Добавляем пометку _HD к имени файла только если был upscale
+                String suffix = upscale ? "_HD.pdf" : "_fixed.pdf";
+                String newPath = file.getAbsolutePath().replace(".pdf", suffix);
+
                 newDoc.save(new File(newPath));
-                System.out.println("   [DONE] HD Файл сохранен: " + newPath);
+                System.out.println("   [DONE] Готово: " + newPath);
             }
         } catch (OutOfMemoryError e) {
-            System.err.println("   [!!!] КРИТИЧЕСКАЯ ОШИБКА ПАМЯТИ [!!!]");
-            System.err.println("   Для HD обработки 300 DPI нужно больше памяти.");
-            System.err.println("   Добавьте в параметры запуска: -Xmx6G");
-            throw new Exception("Нехватка памяти для HD обработки. Увеличьте Heap Size.");
+            System.err.println("   [MEM] Ошибка памяти! Попробуйте добавить -Xmx4G");
+            throw new Exception("Нехватка памяти (Out Of Memory)");
         }
     }
 
     /**
-     * Качественное увеличение изображения (Lanczos interpolation).
-     * Делает линии гладкими без "мыла".
-     */
-    /**
-     * Качественное увеличение изображения.
-     * Исправлено: Используем BICUBIC, так как LANCZOS нет в стандартной Java.
+     * Качественное увеличение (Bicubic).
+     * Вызывается ТОЛЬКО если upscale = true.
      */
     private BufferedImage upscaleImageHighQuality(BufferedImage source) {
         int newW = (int) (source.getWidth() * UPSCALE_FACTOR);
@@ -123,8 +120,7 @@ public class MangaResizer {
         BufferedImage resized = new BufferedImage(newW, newH, source.getType());
         Graphics2D g = resized.createGraphics();
 
-        // Включаем максимальное качество, доступное в Java
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC); // <-- ИСПРАВЛЕНО ТУТ
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
@@ -134,20 +130,22 @@ public class MangaResizer {
         return resized;
     }
 
-    // (Методы autoCrop, isRowWhite, isColWhite, isPixelWhite остаются без изменений из прошлого ответа)
+    // --- ЛОГИКА ОБРЕЗКИ (Остается без изменений) ---
     private BufferedImage autoCrop(BufferedImage source) {
         int width = source.getWidth();
         int height = source.getHeight();
         int top = 0, bottom = height - 1, left = 0, right = width - 1;
         int whiteThreshold = 230;
 
+        // Поиск границ
         for (int y = 0; y < height; y++) { if (!isRowWhite(source, y, width, whiteThreshold)) { top = y; break; } }
         for (int y = height - 1; y >= 0; y--) { if (!isRowWhite(source, y, width, whiteThreshold)) { bottom = y; break; } }
         for (int x = 0; x < width; x++) { if (!isColWhite(source, x, top, bottom, whiteThreshold)) { left = x; break; } }
         for (int x = width - 1; x >= 0; x--) { if (!isColWhite(source, x, top, bottom, whiteThreshold)) { right = x; break; } }
 
-        if (left >= right || top >= bottom) return source;
+        if (left >= right || top >= bottom) return source; // Пустая страница
 
+        // Отступы
         int padding = 20;
         left = Math.max(0, left - padding);
         top = Math.max(0, top - padding);
@@ -158,11 +156,11 @@ public class MangaResizer {
     }
 
     private boolean isRowWhite(BufferedImage img, int y, int width, int threshold) {
-        for (int x = 0; x < width; x += 5) if (!isPixelWhite(img.getRGB(x, y), threshold)) return false;
+        for (int x = 0; x < width; x += 10) if (!isPixelWhite(img.getRGB(x, y), threshold)) return false;
         return true;
     }
     private boolean isColWhite(BufferedImage img, int x, int startY, int endY, int threshold) {
-        for (int y = startY; y <= endY; y += 5) if (!isPixelWhite(img.getRGB(x, y), threshold)) return false;
+        for (int y = startY; y <= endY; y += 10) if (!isPixelWhite(img.getRGB(x, y), threshold)) return false;
         return true;
     }
     private boolean isPixelWhite(int rgb, int threshold) {
