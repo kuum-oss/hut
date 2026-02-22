@@ -24,6 +24,7 @@ public class MangaCleanerApp extends JFrame {
     private JLabel statusLabel;
     private CircleLoader circleLoader;
     private JCheckBox hdModeCheckBox;
+    private JComboBox<String> cropModeComboBox;
 
     // Константы дизайна
     private static final Color ACCENT_COLOR = new Color(0, 120, 215);
@@ -81,17 +82,27 @@ public class MangaCleanerApp extends JFrame {
     }
 
     private JPanel createSettingsPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 15));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 15));
         panel.setOpaque(false);
 
-        hdModeCheckBox = new JCheckBox("Включить HD Upscale (Медленно, но качественно)");
+        hdModeCheckBox = new JCheckBox("Включить HD Upscale");
         hdModeCheckBox.setFont(new Font("Segoe UI", Font.BOLD, 14));
         hdModeCheckBox.setForeground(ACCENT_COLOR);
         hdModeCheckBox.setOpaque(false);
         hdModeCheckBox.setFocusPainted(false);
         hdModeCheckBox.setSelected(false);
 
+        JLabel cropLabel = new JLabel("Режим обрезки:");
+        cropLabel.setFont(FONT_TEXT);
+        
+        String[] modes = {"Без обрезки", "Умный авто-кроп", "Обычная (4 критерия)"};
+        cropModeComboBox = new JComboBox<>(modes);
+        cropModeComboBox.setFont(FONT_TEXT);
+        cropModeComboBox.setSelectedIndex(1); // Smart by default
+
         panel.add(hdModeCheckBox);
+        panel.add(cropLabel);
+        panel.add(cropModeComboBox);
         return panel;
     }
 
@@ -159,11 +170,26 @@ public class MangaCleanerApp extends JFrame {
 
     private void startProcessing(List<File> files) {
         boolean useUpscale = hdModeCheckBox.isSelected();
+        int cropIdx = cropModeComboBox.getSelectedIndex();
+        CropMode selectedCropMode = CropMode.SMART;
+        if (cropIdx == 0) selectedCropMode = CropMode.SKIP;
+        else if (cropIdx == 2) selectedCropMode = CropMode.MANUAL_4_CRIT;
+
+        final CropMode finalCropMode = selectedCropMode;
         toggleUI(true);
 
         SwingWorker<Void, Integer> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() {
+                if (files.isEmpty()) return null;
+
+                // Создаем папку "Cleaned" в директории первого файла
+                File parentDir = files.get(0).getParentFile();
+                File outputDir = new File(parentDir, "Cleaned");
+                if (!outputDir.exists()) {
+                    outputDir.mkdirs();
+                }
+
                 for (int i = 0; i < files.size(); i++) {
                     File file = files.get(i);
                     String fileName = file.getName().toLowerCase();
@@ -172,20 +198,26 @@ public class MangaCleanerApp extends JFrame {
                     try {
                         if (fileName.endsWith(".pdf")) {
                             System.out.println(">>> Режим PDF: " + fileName + " | HD: " + useUpscale);
+                            
+                            // Формируем путь к выходному файлу в папке Cleaned
+                            String outName = file.getName().replace(".pdf", "_cleaned.pdf");
+                            File outFile = new File(outputDir, outName);
 
                             mangaResizer.applyResize(
                                     file,
-                                    CropMode.SMART,
+                                    outFile,
+                                    finalCropMode,
                                     useUpscale,
                                     true,   // binarization (фильтр ч/б для остальных страниц)
                                     true,   // <--- ТЕПЕРЬ TRUE! (Пропустить первую страницу = оставить цветной)
-                                    true    // smartCrop
+                                    finalCropMode != CropMode.SKIP
                             );
                         }
                         else if (fileName.endsWith(".epub")) {
                             System.out.println(">>> Режим EPUB: " + fileName);
-                            String newPath = file.getAbsolutePath().replace(".epub", "_cleaned.epub");
-                            epubCleaner.clean(file, new File(newPath));
+                            String outName = file.getName().replace(".epub", "_cleaned.epub");
+                            File outFile = new File(outputDir, outName);
+                            epubCleaner.clean(file, outFile);
                         }
                         else {
                             System.out.println(">>> Пропуск: " + fileName);
@@ -224,6 +256,7 @@ public class MangaCleanerApp extends JFrame {
         circleLoader.setVisible(processing);
         dropPanel.setEnabled(!processing);
         hdModeCheckBox.setEnabled(!processing);
+        cropModeComboBox.setEnabled(!processing);
         if (processing) progressBar.setValue(0);
     }
 

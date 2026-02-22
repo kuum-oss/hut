@@ -24,16 +24,19 @@ public class MangaResizer {
     private static final float DPI_HIGH = 300f;
     private static final double UPSCALE_FACTOR = 1.5;
 
-    public void applyResize(File file, CropMode cropMode, boolean upscale, boolean binarization, boolean skipFirstPage, boolean smartCrop) throws Exception {
+    public void applyResize(File file, File outFile, CropMode cropMode, boolean upscale, boolean binarization, boolean skipFirstPage, boolean smartCrop) throws Exception {
         float currentDpi = upscale ? DPI_HIGH : DPI_STANDARD;
         String modeName = upscale ? "HD Quality" : "Turbo Mode";
 
         System.out.println("   [LOG] Открытие: " + file.getName());
-        System.out.println("   [MODE] " + modeName + " + Pattern Eraser");
+        System.out.println("   [MODE] " + modeName + " + Pattern Eraser | Crop: " + cropMode);
 
         int oddPagesDeletedStreak = 0;
         boolean patternLocked = false;
         int processedPagesCount = 0; // Считаем только реально обработанные страницы
+        
+        boolean autoEmptyCheckEnabled = false;
+        int emptyCheckCount = 0;
 
         // Принудительная чистка перед стартом
         System.gc();
@@ -105,12 +108,25 @@ public class MangaResizer {
 
                     BufferedImage image = renderer.renderImageWithDPI(i, currentDpi, ImageType.RGB);
 
+                    // --- 4. ПРОВЕРКА НА ПУСТУЮ СТРАНИЦУ (Watermark check) ---
+                    if (emptyCheckCount < 10 || autoEmptyCheckEnabled) {
+                        if (isImageEmpty(image)) {
+                            System.out.println("   [DEL] Стр. " + pageNum + " удалена (пустая/только вотермарка).");
+                            image.flush();
+                            if (emptyCheckCount < 10) emptyCheckCount++;
+                            if (emptyCheckCount == 10) autoEmptyCheckEnabled = true;
+                            continue;
+                        }
+                    }
+
                     if (upscale) {
                         image = resizeImage(image, UPSCALE_FACTOR, true);
                     }
 
-                    if (smartCrop) {
+                    if (cropMode == CropMode.SMART) {
                         image = autoCropFast(image);
+                    } else if (cropMode == CropMode.MANUAL_4_CRIT) {
+                        image = manualCrop4(image);
                     }
 
                     imageProcessor.setBinarization(binarization);
@@ -135,10 +151,8 @@ public class MangaResizer {
                     }
                 }
 
-                String suffix = upscale ? "_HD.pdf" : "_fixed.pdf";
-                String newPath = file.getAbsolutePath().replace(".pdf", suffix);
-                newDoc.save(new File(newPath));
-                System.out.println("   [DONE] Готово: " + newPath);
+                newDoc.save(outFile);
+                System.out.println("   [DONE] Готово: " + outFile.getAbsolutePath());
             }
         } catch (OutOfMemoryError e) {
             System.err.println("   [MEM] Ошибка памяти! Попробуйте флаги -Xmx4G");
@@ -205,5 +219,40 @@ public class MangaResizer {
     }
     private boolean isPixelWhite(int rgb, int threshold) {
         return ((rgb >> 16) & 0xFF) > threshold && ((rgb >> 8) & 0xFF) > threshold && (rgb & 0xFF) > threshold;
+    }
+
+    private boolean isImageEmpty(BufferedImage img) {
+        int w = img.getWidth();
+        int h = img.getHeight();
+        int whiteThreshold = 240;
+        int step = 15;
+        
+        // Проверяем наличие темных пикселей (контента)
+        for (int y = 0; y < h; y += step) {
+            for (int x = 0; x < w; x += step) {
+                if (!isPixelWhite(img.getRGB(x, y), whiteThreshold)) {
+                    return false; // Нашли контент
+                }
+            }
+        }
+        return true; // Контента нет
+    }
+
+    private BufferedImage manualCrop4(BufferedImage source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        
+        // Обычная обрезка по 4 критериям (статичные поля 5%)
+        int cropW = (int) (width * 0.05);
+        int cropH = (int) (height * 0.05);
+        
+        int x = cropW;
+        int y = cropH;
+        int w = width - 2 * cropW;
+        int h = height - 2 * cropH;
+        
+        if (w <= 0 || h <= 0) return source;
+        
+        return source.getSubimage(x, y, w, h);
     }
 }

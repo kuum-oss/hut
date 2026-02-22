@@ -8,8 +8,11 @@ import java.util.stream.IntStream;
 public class LevelsFilter implements ImageFilter {
     @Override
     public BufferedImage apply(BufferedImage image) {
-        // Защита от ClassCastException
-        if (image.getType() != BufferedImage.TYPE_INT_RGB) {
+        // Проверка типа и отсутствия смещений растра (чтобы DataBufferInt соответствовал размерам)
+        if (image.getType() != BufferedImage.TYPE_INT_RGB ||
+            image.getRaster().getSampleModelTranslateX() != 0 ||
+            image.getRaster().getSampleModelTranslateY() != 0) {
+            
             BufferedImage temp = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
             Graphics2D g = temp.createGraphics();
             g.drawImage(image, 0, 0, null);

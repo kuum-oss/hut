@@ -29,23 +29,43 @@ public class MangaImageProcessor {
     public BufferedImage process(BufferedImage original) {
         if (original == null) return null;
 
-        BufferedImage current = convertToCompat(original);
+        BufferedImage current = original;
+        if (current.getType() != BufferedImage.TYPE_INT_RGB) {
+            current = convertToCompat(original);
+        }
 
         // Применяем фильтры (Апскейл, Резкость и т.д.)
         for (ImageFilter filter : pipeline) {
-            current = filter.apply(current);
+            BufferedImage next = filter.apply(current);
+            // Если фильтр вернул новый объект, флушим старый (если он был создан нами)
+            if (next != current && current != original) {
+                current.flush();
+            }
+            current = next;
         }
 
         // E-Ink режим (всегда в конце)
         if (useBinarization) {
-            current = new BinarizationFilter().apply(current);
+            BufferedImage next = new BinarizationFilter().apply(current);
+            if (next != current && current != original) {
+                current.flush();
+            }
+            current = next;
         }
 
         return current;
     }
 
     private BufferedImage convertToCompat(BufferedImage image) {
-        if (image.getType() == BufferedImage.TYPE_INT_RGB) return image;
+        // Если изображение уже нужного типа, проверяем, не является ли оно subimage (через смещение растра)
+        if (image.getType() == BufferedImage.TYPE_INT_RGB) {
+            if (image.getRaster().getSampleModelTranslateX() == 0 &&
+                image.getRaster().getSampleModelTranslateY() == 0) {
+                return image;
+            }
+        }
+        
+        // Создаем новое "чистое" изображение без смещений и с нужным типом
         BufferedImage newImg = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D g = newImg.createGraphics();
         g.drawImage(image, 0, 0, null);
