@@ -17,6 +17,7 @@ public class MangaCleanerApp extends JFrame {
 
     private final MangaResizer mangaResizer = new MangaResizer();
     private final EpubWatermarkCleaner epubCleaner = new EpubWatermarkCleaner();
+    private EpubEditorDialog epubEditorDialog;
 
     // Компоненты UI
     private JPanel dropPanel;
@@ -43,6 +44,8 @@ public class MangaCleanerApp extends JFrame {
         setMinimumSize(new Dimension(800, 600));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
+
+        epubEditorDialog = new EpubEditorDialog(this);
 
         initUI();
     }
@@ -77,9 +80,25 @@ public class MangaCleanerApp extends JFrame {
         subtitle.setFont(FONT_TEXT);
         subtitle.setForeground(Color.GRAY);
 
-        header.add(title);
-        header.add(subtitle);
-        return header;
+        JButton epubEditBtn = new JButton("Редактор EPUB");
+        epubEditBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        epubEditBtn.setBackground(new Color(34, 139, 34)); // ForestGreen
+        epubEditBtn.setForeground(Color.WHITE);
+        epubEditBtn.setFocusPainted(false);
+        epubEditBtn.addActionListener(e -> {
+            epubEditorDialog.setVisible(true);
+        });
+
+        JPanel rightHeader = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        rightHeader.setOpaque(false);
+        rightHeader.add(epubEditBtn);
+
+        JPanel headerContainer = new JPanel(new BorderLayout());
+        headerContainer.setOpaque(false);
+        headerContainer.add(header, BorderLayout.WEST);
+        headerContainer.add(rightHeader, BorderLayout.EAST);
+
+        return headerContainer;
     }
 
     private JPanel createSettingsPanel() {
@@ -224,7 +243,7 @@ public class MangaCleanerApp extends JFrame {
                             System.out.println(">>> Режим EPUB: " + fileName);
                             String outName = file.getName().replace(".epub", "_cleaned.epub");
                             File outFile = new File(outputDir, outName);
-                            epubCleaner.clean(file, outFile);
+                            epubCleaner.clean(file, outFile, epubEditorDialog);
                         }
                         else {
                             System.out.println(">>> Пропуск: " + fileName);
