@@ -15,7 +15,7 @@ public class AutoCropFilter implements ImageFilter {
         int top = 0, bottom = height - 1, left = 0, right = width - 1;
 
         // Поиск границ (логика оставлена, исправлена безопасность)
-        // ... (код поиска top/bottom/left/right как в вашем исходнике) ...
+        // ... (код поиска top/bottom/left/right) ...
 
         if (right <= left || bottom <= top) return img;
 

@@ -24,6 +24,7 @@ public class MangaCleanerApp extends JFrame {
     private JLabel statusLabel;
     private CircleLoader circleLoader;
     private JCheckBox hdModeCheckBox;
+    private JCheckBox colorModeCheckBox;
     private JComboBox<String> cropModeComboBox;
 
     // Константы дизайна
@@ -85,12 +86,16 @@ public class MangaCleanerApp extends JFrame {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 15));
         panel.setOpaque(false);
 
-        hdModeCheckBox = new JCheckBox("Включить HD Upscale");
-        hdModeCheckBox.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        hdModeCheckBox.setForeground(ACCENT_COLOR);
+        hdModeCheckBox = new JCheckBox("HD Upscale");
+        hdModeCheckBox.setFont(FONT_TEXT);
         hdModeCheckBox.setOpaque(false);
-        hdModeCheckBox.setFocusPainted(false);
         hdModeCheckBox.setSelected(false);
+
+        colorModeCheckBox = new JCheckBox("Оставить цвет (Комиксы)");
+        colorModeCheckBox.setFont(FONT_TEXT);
+        colorModeCheckBox.setForeground(ACCENT_COLOR);
+        colorModeCheckBox.setOpaque(false);
+        colorModeCheckBox.setSelected(false);
 
         JLabel cropLabel = new JLabel("Режим обрезки:");
         cropLabel.setFont(FONT_TEXT);
@@ -101,6 +106,7 @@ public class MangaCleanerApp extends JFrame {
         cropModeComboBox.setSelectedIndex(1); // Smart by default
 
         panel.add(hdModeCheckBox);
+        panel.add(colorModeCheckBox);
         panel.add(cropLabel);
         panel.add(cropModeComboBox);
         return panel;
@@ -170,6 +176,7 @@ public class MangaCleanerApp extends JFrame {
 
     private void startProcessing(List<File> files) {
         boolean useUpscale = hdModeCheckBox.isSelected();
+        boolean keepColor = colorModeCheckBox.isSelected();
         int cropIdx = cropModeComboBox.getSelectedIndex();
         CropMode selectedCropMode = CropMode.SMART;
         if (cropIdx == 0) selectedCropMode = CropMode.SKIP;
@@ -208,7 +215,7 @@ public class MangaCleanerApp extends JFrame {
                                     outFile,
                                     finalCropMode,
                                     useUpscale,
-                                    true,   // binarization (фильтр ч/б для остальных страниц)
+                                    !keepColor,   // binarization
                                     true,   // <--- ТЕПЕРЬ TRUE! (Пропустить первую страницу = оставить цветной)
                                     finalCropMode != CropMode.SKIP
                             );

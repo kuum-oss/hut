@@ -22,7 +22,8 @@ public class MangaResizer {
 
     private static final float DPI_STANDARD = 144f;
     private static final float DPI_HIGH = 300f;
-    private static final double UPSCALE_FACTOR = 1.5;
+    private static final double UPSCALE_FACTOR = 1.35; // Уменьшен для сохранения резкости (1.5 было многовато)
+    private static final int TARGET_WIDTH_HD = 2000; // Рекомендованная ширина для HD комиксов
 
     public void applyResize(File file, File outFile, CropMode cropMode, boolean upscale, boolean binarization, boolean skipFirstPage, boolean smartCrop) throws Exception {
         float currentDpi = upscale ? DPI_HIGH : DPI_STANDARD;
@@ -119,8 +120,21 @@ public class MangaResizer {
                         }
                     }
 
+                    // --- 5. УМНЫЙ АПСКЕЙЛ (Для качества) ---
                     if (upscale) {
-                        image = resizeImage(image, UPSCALE_FACTOR, true);
+                        // Если в режиме комиксов (нет бинаризации), стремимся к TARGET_WIDTH_HD
+                        if (!binarization) {
+                            if (image.getWidth() < TARGET_WIDTH_HD) {
+                                double factor = (double) TARGET_WIDTH_HD / image.getWidth();
+                                factor = Math.min(factor, 2.0); // Ограничение x2 для предотвращения мыла
+                                if (factor > 1.05) {
+                                    image = resizeImage(image, factor, true);
+                                }
+                            }
+                        } else {
+                            // Для манги (ч/б) используем стандартный коэффициент
+                            image = resizeImage(image, UPSCALE_FACTOR, true);
+                        }
                     }
 
                     if (cropMode == CropMode.SMART) {

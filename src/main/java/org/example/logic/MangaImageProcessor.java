@@ -16,7 +16,9 @@ public class MangaImageProcessor {
         // Причина: Обрезка теперь управляется умным алгоритмом в MangaResizer.
 
         // Оставляем только фильтры качества
-        pipeline.add(new UpscaleFilter());
+        // УДАЛЕНО: pipeline.add(new UpscaleFilter());
+        // Причина: Апскейл теперь управляется в MangaResizer для предотвращения повторной обработки.
+        
         pipeline.add(new DenoiseFilter());
         pipeline.add(new LevelsFilter());
         pipeline.add(new SharpenFilter());
@@ -34,8 +36,16 @@ public class MangaImageProcessor {
             current = convertToCompat(original);
         }
 
-        // Применяем фильтры (Апскейл, Резкость и т.д.)
+        // Применяем фильтры (Резкость и т.д.)
+        // ВНИМАНИЕ: Если выключена бинаризация (режим комиксов), 
+        // пропускаем деструктивные фильтры улучшения ч/б текста.
         for (ImageFilter filter : pipeline) {
+            if (!useBinarization) {
+                if (filter instanceof DenoiseFilter || filter instanceof LevelsFilter || filter instanceof SharpenFilter) {
+                    continue;
+                }
+            }
+            
             BufferedImage next = filter.apply(current);
             // Если фильтр вернул новый объект, флушим старый (если он был создан нами)
             if (next != current && current != original) {
