@@ -43,3 +43,68 @@
 git clone [https://github.com/ваш-аккаунт/manga-cleaner.git](https://github.com/ваш-аккаунт/manga-cleaner.git)
 cd manga-cleaner
 mvn clean install
+```
+
+## 📚 Примеры книг
+В папке `BookExample(NO_USE)` находятся примеры файлов для демонстрации работы программы. 
+> **Внимание:** Эти файлы предоставлены исключительно для ознакомления с функционалом. Пожалуйста, ознакомьтесь с [warning.md](BookExample(NO_USE)/warnin.md).
+
+---
+
+## 🖼️ Визуализация
+
+### 🔄 До и После (Очистка водяных знаков)
+| Оригинал (с рекламой/водяными знаками) | После обработки (чистая страница) |
+| :---: | :---: |
+| ![Before](Photo%20/A.png) | ![After](Photo%20/B.png) |
+
+---
+
+## 📊 Схема работы
+Ниже представлена диаграмма процесса обработки документа в приложении:
+
+![Diagram](Photo%20/C.png)
+
+### PlantUML (Код диаграммы)
+<details>
+<summary>Показать код PlantUML</summary>
+
+```plantuml
+@startuml
+skinparam backgroundColor #EEEBDC
+skinparam handwritten false
+
+actor User
+participant "MangaCleanerApp (UI)" as UI
+participant "MangaImageProcessor" as Processor
+participant "PdfWatermarkCleaner" as PDF
+participant "EpubWatermarkCleaner" as EPUB
+
+User -> UI : Drag & Drop File
+UI -> UI : Detect File Format
+
+alt PDF Format
+    UI -> PDF : Process PDF
+    PDF -> PDF : Scan for Pattern Ads
+    PDF -> Processor : Process Images (Filters)
+    Processor -> Processor : HD Upscale / Binarization / Crop
+    PDF -> UI : Save Clean PDF
+else EPUB Format
+    UI -> EPUB : Process EPUB
+    EPUB -> EPUB : Extract XML/HTML
+    EPUB -> EPUB : Remove Watermark Patterns
+    EPUB -> UI : Save Clean EPUB
+end
+
+UI -> User : Show Success Message
+@enduml
+```
+</details>
+
+---
+
+## 🛠️ Стек технологий
+* **Java 17**
+* **FlatLaf** (Modern UI)
+* **iText / PDFBox** (PDF processing)
+* **ImageIO** (Image filters)
