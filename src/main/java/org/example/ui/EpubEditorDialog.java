@@ -1,5 +1,6 @@
 package org.example.ui;
 
+import com.formdev.flatlaf.FlatClientProperties;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -15,63 +16,74 @@ public class EpubEditorDialog extends JDialog {
     private final JPanel taskListPanel;
     private final JCheckBox replaceStarsCheckBox;
 
-    private static final Color ACCENT_COLOR = new Color(0, 120, 215);
-    private static final Color BG_COLOR = new Color(245, 245, 245);
+    // Современная цветовая палитра
+    private static final Color ACCENT_COLOR = new Color(33, 150, 243); // Material Blue
+    private static final Color SUCCESS_COLOR = new Color(46, 204, 113);
+    private static final Color DANGER_COLOR = new Color(231, 76, 60);
+    private static final Color TEXT_MAIN = new Color(44, 62, 80);
+    private static final Color BORDER_COLOR = new Color(224, 224, 224);
+
+    // Шрифты
     private static final Font FONT_TITLE = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font FONT_TEXT = new Font("Segoe UI", Font.PLAIN, 14);
+    private static final Font FONT_BOLD = new Font("Segoe UI", Font.BOLD, 14);
 
     public EpubEditorDialog(Frame owner) {
         super(owner, "Редактор EPUB - Добавление Иллюстраций", true);
-        setSize(750, 600);
+        setSize(800, 650);
         setLocationRelativeTo(owner);
-        setLayout(new BorderLayout(10, 10));
-        getContentPane().setBackground(BG_COLOR);
+        setLayout(new BorderLayout());
 
         // Header
-        JPanel header = new JPanel(new BorderLayout(0, 10));
+        JPanel header = new JPanel(new BorderLayout(0, 12));
         header.setOpaque(false);
-        header.setBorder(new EmptyBorder(25, 25, 10, 25));
-        
-        JLabel title = new JLabel("Редактирование EPUB контента");
+        header.setBorder(new EmptyBorder(25, 30, 15, 30));
+
+        JLabel title = new JLabel("📖 Редактирование EPUB контента");
         title.setFont(FONT_TITLE);
-        title.setForeground(Color.DARK_GRAY);
+        title.setForeground(TEXT_MAIN);
         header.add(title, BorderLayout.NORTH);
-        
-        replaceStarsCheckBox = new JCheckBox("Заменять '***' на изображения во всей книге");
+
+        replaceStarsCheckBox = new JCheckBox("✨ Заменять '***' на изображения во всей книге");
         replaceStarsCheckBox.setFont(FONT_TEXT);
+        replaceStarsCheckBox.setForeground(TEXT_MAIN);
         replaceStarsCheckBox.setOpaque(false);
+        replaceStarsCheckBox.setFocusPainted(false);
         header.add(replaceStarsCheckBox, BorderLayout.SOUTH);
         add(header, BorderLayout.NORTH);
 
         // Task List (Scrollable)
         taskListPanel = new JPanel();
-        taskListPanel.setBackground(Color.WHITE);
+        taskListPanel.setOpaque(false);
         taskListPanel.setLayout(new BoxLayout(taskListPanel, BoxLayout.Y_AXIS));
-        
+        taskListPanel.setBorder(new EmptyBorder(0, 30, 0, 30)); // Отступы по бокам
+
         JScrollPane scrollPane = new JScrollPane(taskListPanel);
-        scrollPane.setBorder(BorderFactory.createCompoundBorder(
-                new EmptyBorder(10, 25, 10, 25),
-                BorderFactory.createLineBorder(new Color(230, 230, 230))
-        ));
-        scrollPane.getViewport().setBackground(Color.WHITE);
+        scrollPane.setBorder(null); // Убираем некрасивую стандартную рамку
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        // Ускоряем скроллинг мыши (важный QoL фикс для Swing)
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         add(scrollPane, BorderLayout.CENTER);
 
         // Bottom Controls
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 20));
         footer.setOpaque(false);
-        
-        JButton addBtn = new JButton("+ Добавить");
-        addBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        
-        JButton okBtn = new JButton("OK – Сохранить настройки");
-        okBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        okBtn.setBackground(ACCENT_COLOR);
-        okBtn.setForeground(Color.WHITE);
-        okBtn.setFocusPainted(false);
-        
+        footer.setBorder(new EmptyBorder(10, 30, 15, 30));
+
+        JButton addBtn = new JButton("➕ Добавить страницу");
+        addBtn.setFont(FONT_BOLD);
+        addBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 10; background: #ffffff; foreground: #2c3e50;");
+        addBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        JButton okBtn = new JButton("✅ Сохранить настройки");
+        okBtn.setFont(FONT_BOLD);
+        okBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 10; background: #2196f3; foreground: #ffffff;");
+        okBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
         addBtn.addActionListener(e -> addNewTask());
         okBtn.addActionListener(e -> dispose());
-        
+
         footer.add(addBtn);
         footer.add(okBtn);
         add(footer, BorderLayout.SOUTH);
@@ -84,13 +96,21 @@ public class EpubEditorDialog extends JDialog {
         ImageTask task = new ImageTask(this);
         tasks.add(task);
         taskListPanel.add(task.panel);
+        taskListPanel.add(Box.createRigidArea(new Dimension(0, 15))); // Промежуток между задачами
         taskListPanel.revalidate();
         taskListPanel.repaint();
     }
 
     public void removeTask(ImageTask task) {
         tasks.remove(task);
-        taskListPanel.remove(task.panel);
+        // Удаляем саму панель и следующий за ней отступ (RigidArea)
+        int index = taskListPanel.getComponentZOrder(task.panel);
+        if (index != -1) {
+            taskListPanel.remove(index);
+            if (index < taskListPanel.getComponentCount()) {
+                taskListPanel.remove(index); // Удаляем Box.createRigidArea
+            }
+        }
         taskListPanel.revalidate();
         taskListPanel.repaint();
     }
@@ -111,55 +131,73 @@ public class EpubEditorDialog extends JDialog {
         public JCheckBox useForStars;
 
         ImageTask(EpubEditorDialog dialog) {
-            panel = new JPanel(new BorderLayout(15, 5));
-            panel.setOpaque(false);
-            panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+            panel = new JPanel(new BorderLayout(20, 10));
+            panel.putClientProperty(FlatClientProperties.STYLE, "arc: 12; background: #ffffff;");
+            panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
             panel.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(230, 230, 230)),
-                    new EmptyBorder(15, 10, 15, 10)
+                    BorderFactory.createLineBorder(BORDER_COLOR, 1, true), // Скругленные углы
+                    new EmptyBorder(15, 15, 15, 15)
             ));
 
-            imgLabel = new JLabel("JPEG сюда");
-            imgLabel.setPreferredSize(new Dimension(160, 80));
+            // Зона Drop (обертка для скругления)
+            JPanel imgWrapper = new JPanel(new BorderLayout());
+            imgWrapper.putClientProperty(FlatClientProperties.STYLE, "arc: 12; background: #f5f7fa;");
+            
+            imgLabel = new JLabel("📥 Перетащите JPEG сюда");
+            imgLabel.setPreferredSize(new Dimension(200, 90));
             imgLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            imgLabel.setBorder(BorderFactory.createDashedBorder(Color.LIGHT_GRAY, 1, 4, 2, true));
-            imgLabel.setForeground(Color.GRAY);
-            imgLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+            imgLabel.setOpaque(false); // Делаем прозрачным, фон рисует обертка
+            imgLabel.setBorder(BorderFactory.createDashedBorder(Color.GRAY, 2, 5, 2, false));
+            imgLabel.setForeground(Color.DARK_GRAY);
+            imgLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            
+            imgWrapper.add(imgLabel);
 
+            // Правая часть с настройками
             JPanel right = new JPanel(new GridBagLayout());
             right.setOpaque(false);
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.anchor = GridBagConstraints.WEST;
-            gbc.insets = new Insets(0, 5, 5, 5);
+            gbc.insets = new Insets(5, 10, 5, 10);
 
             gbc.gridx = 0; gbc.gridy = 0;
-            right.add(new JLabel("Стр:"), gbc);
-            
+            JLabel pageLabel = new JLabel("📄 Номер страницы:");
+            pageLabel.setFont(FONT_TEXT);
+            pageLabel.setForeground(TEXT_MAIN);
+            right.add(pageLabel, gbc);
+
             gbc.gridx = 1;
-            pageField = new JTextField("0", 4);
-            pageField.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            pageField = new JTextField("0", 5);
+            pageField.setFont(FONT_BOLD);
+            pageField.setHorizontalAlignment(JTextField.CENTER);
+            pageField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "№");
             right.add(pageField, gbc);
 
             gbc.gridx = 0; gbc.gridy = 1;
             gbc.gridwidth = 2;
-            useForStars = new JCheckBox("Использовать для '***'");
-            useForStars.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            useForStars = new JCheckBox("⭐ Использовать для замены '***'");
+            useForStars.setFont(FONT_TEXT);
+            useForStars.setForeground(TEXT_MAIN);
             useForStars.setOpaque(false);
+            useForStars.setFocusPainted(false);
             right.add(useForStars, gbc);
 
-            JButton delBtn = new JButton("× Удалить");
-            delBtn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            delBtn.setForeground(new Color(200, 0, 0));
+            // Кнопка удаления
+            JButton delBtn = new JButton("🗑️");
+            delBtn.setToolTipText("Удалить задачу");
+            delBtn.setFont(new Font("Segoe UI", Font.PLAIN, 18));
+            delBtn.setForeground(DANGER_COLOR);
             delBtn.setBorderPainted(false);
             delBtn.setContentAreaFilled(false);
             delBtn.setFocusPainted(false);
+            delBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
             delBtn.addActionListener(e -> dialog.removeTask(this));
 
             JPanel actionPanel = new JPanel(new BorderLayout());
             actionPanel.setOpaque(false);
-            actionPanel.add(delBtn, BorderLayout.NORTH);
+            actionPanel.add(delBtn, BorderLayout.CENTER);
 
-            panel.add(imgLabel, BorderLayout.WEST);
+            panel.add(imgWrapper, BorderLayout.WEST);
             panel.add(right, BorderLayout.CENTER);
             panel.add(actionPanel, BorderLayout.EAST);
 
@@ -169,6 +207,7 @@ public class EpubEditorDialog extends JDialog {
         private void setupDragAndDrop(EpubEditorDialog dialog) {
             new DropTarget(imgLabel, new DropTargetAdapter() {
                 @Override
+                @SuppressWarnings("unchecked")
                 public void drop(DropTargetDropEvent dtde) {
                     try {
                         dtde.acceptDrop(DnDConstants.ACTION_COPY);
@@ -178,15 +217,18 @@ public class EpubEditorDialog extends JDialog {
                             String ext = f.getName().toLowerCase();
                             if (ext.endsWith(".jpg") || ext.endsWith(".jpeg")) {
                                 imageFile = f;
-                                imgLabel.setText(f.getName());
-                                imgLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-                                imgLabel.setForeground(new Color(0, 150, 0));
-                                imgLabel.setBorder(BorderFactory.createLineBorder(new Color(0, 200, 0), 2));
+                                imgLabel.setText("<html><center>✅ " + f.getName() + "</center></html>");
+                                JPanel wrapper = (JPanel) imgLabel.getParent();
+                                wrapper.putClientProperty(FlatClientProperties.STYLE, "arc: 12; background: #ebfaf0;"); // Зеленоватый фон успеха
+                                imgLabel.setForeground(SUCCESS_COLOR);
+                                imgLabel.setBorder(BorderFactory.createLineBorder(SUCCESS_COLOR, 2, true));
                             } else {
-                                JOptionPane.showMessageDialog(dialog, "Только JPEG изображения!");
+                                JOptionPane.showMessageDialog(dialog, "❌ Пожалуйста, используйте только JPEG изображения!", "Ошибка формата", JOptionPane.ERROR_MESSAGE);
                             }
                         }
-                    } catch (Exception ex) { ex.printStackTrace(); }
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
                 }
             });
         }
